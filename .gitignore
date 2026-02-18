@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Output files
+output/
+*.csv
+*.png
+*.jpg
+*.pdf
+*.pptx
+
+# Data (optional - uncomment if you want to exclude data files)
+# data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy files (mark them to not commit)
+run.py
+run.weekly.py
+run.customized.py
+run_targetpay.py
+run_visualization.py
+load_mkt_data_db.py
+data_download/
+models/btbuilder.py
+models/btbuilder_weekly.py
+models/btbuilder_customized.py
+models/cboe.py
+helper_functions/
+runs/portfolio_configs.csv
+runs/create_custom_options*.py
