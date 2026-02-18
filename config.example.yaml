@@ -1,0 +1,27 @@
+# Example configuration file for option backtest framework
+# Copy this to config.yaml and customize as needed
+
+# Database configuration (optional - only needed if using database for market data)
+database:
+  enabled: false  # Set to true to enable database connectivity
+  server: ""  # e.g., 'your-server.database.windows.net'
+  database: ""  # e.g., 'market-data-db'
+  username: ""  # Use environment variable: ${DB_USERNAME}
+  password: ""  # Use environment variable: ${DB_PASSWORD}
+  driver: "ODBC Driver 17 for SQL Server"
+
+# Directory paths (relative to project root)
+paths:
+  data_dir: "data_download"  # Where market data CSV files are stored
+  output_dir: "output"  # Where backtest results are saved
+  config_dir: "runs"  # Where portfolio configurations are stored
+
+# Backtest defaults
+backtest:
+  base_currency: "USD"
+  reinvest_premium: true
+  eod_pricing_method: "mid"  # 'mid', 'bid', or 'ask'
+
+# Bloomberg configuration (optional - only if using Bloomberg API)
+bloomberg:
+  enabled: false
