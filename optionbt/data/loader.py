@@ -57,17 +57,19 @@ class DataLoader:
         end_date: str
     ) -> pd.DataFrame:
         """Load equity prices from database."""
-        query = f"""
+        query = """
             SELECT [date] as date, [value] as px_last, source
             FROM [dbo].[market_data]
-            WHERE ticker = '{ticker}' 
+            WHERE ticker = ? 
                 AND field = 'px_last'
-                AND [date] >= '{start_date}' 
-                AND [date] <= '{end_date}'
+                AND [date] >= ? 
+                AND [date] <= ?
             ORDER BY [date]
         """
         
-        df = self.db.query(query)
+        # Use parameterized query to prevent SQL injection
+        import pandas as pd
+        df = pd.read_sql(query, self.db.conn, params=(ticker, start_date, end_date))
         
         if df.empty:
             raise ValueError(f"No data found for {ticker}")
@@ -134,16 +136,20 @@ class DataLoader:
         end_date: str
     ) -> pd.DataFrame:
         """Load option prices from database."""
-        query = f"""
+        # For LIKE queries with %, we need to append the % in the parameter
+        ticker_pattern = f"{ticker}%"
+        query = """
             SELECT [date], [ticker], [field], [value]
             FROM [dbo].[market_data]
-            WHERE [ticker] LIKE '{ticker}%'
-                AND [date] >= '{start_date}'
-                AND [date] <= '{end_date}'
+            WHERE [ticker] LIKE ?
+                AND [date] >= ?
+                AND [date] <= ?
             ORDER BY [date], [ticker]
         """
         
-        df = self.db.query(query)
+        # Use parameterized query to prevent SQL injection
+        import pandas as pd
+        df = pd.read_sql(query, self.db.conn, params=(ticker_pattern, start_date, end_date))
         df['value'] = df['value'].astype(float)
         
         return df
@@ -185,15 +191,17 @@ class DataLoader:
     
     def _load_dividends_from_db(self, ticker: str) -> pd.DataFrame:
         """Load dividends from database."""
-        query = f"""
+        query = """
             SELECT [date], [value] as amount
             FROM [dbo].[market_data]
-            WHERE ticker = '{ticker}' 
+            WHERE ticker = ? 
                 AND field = 'dvd_amt'
             ORDER BY [date]
         """
         
-        df = self.db.query(query)
+        # Use parameterized query to prevent SQL injection
+        import pandas as pd
+        df = pd.read_sql(query, self.db.conn, params=(ticker,))
         df['amount'] = df['amount'].astype(float)
         
         return df
@@ -241,16 +249,18 @@ class DataLoader:
         end_date: str
     ) -> pd.DataFrame:
         """Load FX rates from database."""
-        query = f"""
+        query = """
             SELECT [date], [value] as rate
             FROM [dbo].[market_data]
-            WHERE ticker = '{currency_pair}' 
-                AND [date] >= '{start_date}' 
-                AND [date] <= '{end_date}'
+            WHERE ticker = ? 
+                AND [date] >= ? 
+                AND [date] <= ?
             ORDER BY [date]
         """
         
-        df = self.db.query(query)
+        # Use parameterized query to prevent SQL injection
+        import pandas as pd
+        df = pd.read_sql(query, self.db.conn, params=(currency_pair, start_date, end_date))
         df['rate'] = df['rate'].astype(float)
         
         return df

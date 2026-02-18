@@ -258,7 +258,7 @@ Portfolio-level daily summary:
 ```csv
 date,market_value,cash_inflow,cash_outflow,portfolio_value,daily_return,cumulative_return,drawdown
 2020-01-03,10324870.0,0,0,10324870.0,0.0,0.0,0.0
-2020-01-06,10298450.0,0,0,10298450.0,-0.00256,--0.00256,-0.00256
+2020-01-06,10298450.0,0,0,10298450.0,-0.00256,-0.00256,-0.00256
 ...
 ```
 
