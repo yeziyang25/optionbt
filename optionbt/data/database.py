@@ -1,10 +1,15 @@
 """Database connection and query utilities."""
 
 import os
-import pyodbc
 import pandas as pd
 from typing import Optional
 from ..config import get_config
+
+try:
+    import pyodbc
+    PYODBC_AVAILABLE = True
+except ImportError:
+    PYODBC_AVAILABLE = False
 
 
 class DatabaseConnection:
@@ -48,6 +53,9 @@ class DatabaseConnection:
     
     def _connect_with_string(self, connection_string: str):
         """Connect using a connection string."""
+        if not PYODBC_AVAILABLE:
+            raise ImportError("pyodbc is not installed. Install it with: pip install pyodbc")
+        
         try:
             self.conn = pyodbc.connect(connection_string)
             self.cursor = self.conn.cursor()
