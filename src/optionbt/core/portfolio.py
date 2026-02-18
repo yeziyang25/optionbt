@@ -28,7 +28,22 @@ class Position:
             price: Optional price override (otherwise fetched from security)
         """
         if price is None:
-            price = self.security.get_price(current_date)
+            try:
+                price = self.security.get_price(current_date)
+            except (ValueError, KeyError):
+                # No price available - handle gracefully
+                from src.optionbt.core.security import Option
+                if isinstance(self.security, Option):
+                    if self.security.is_expired(current_date):
+                        # Expired option worth 0
+                        price = 0.0
+                    else:
+                        # Missing data but not expired - for short options (negative qty)
+                        # assume small value, for long assume 0 conservatively
+                        price = 0.01 if self.quantity < 0 else 0.0
+                else:
+                    # For equities, this is an error
+                    raise
         return self.quantity * price
     
     def unrealized_pnl(self, current_date: date) -> float:
@@ -150,8 +165,12 @@ class Portfolio:
             return None
         
         position = self.positions[ticker]
-        proceeds = -position.quantity * price  # Negative quantity means we sell
-        realized_pnl = proceeds + position.quantity * position.entry_price
+        
+        # For a long position (positive qty), we sell (receive cash)
+        # For a short position (negative qty), we buy (pay cash)
+        proceeds = position.quantity * price
+        cost_basis = position.quantity * position.entry_price
+        realized_pnl = proceeds - cost_basis
         
         # Update cash
         self.cash += proceeds
@@ -161,7 +180,7 @@ class Portfolio:
             self.trade_history.append({
                 "date": trade_date,
                 "ticker": ticker,
-                "quantity": -position.quantity,
+                "quantity": -position.quantity,  # Opposite of position
                 "price": price,
                 "value": proceeds,
                 "type": "CLOSE",

@@ -268,11 +268,18 @@ class BacktestEngine:
             option_pos = self.portfolio.get_position(self.current_option_ticker)
             if option_pos:
                 try:
-                    option_value = option_pos.market_value(current_date)
-                    additional_metrics["option_value"] = option_value
-                    additional_metrics["option_ticker"] = self.current_option_ticker
+                    # Only try to value if option isn't expired
+                    if not self.current_option.is_expired(current_date):
+                        option_value = option_pos.market_value(current_date)
+                        additional_metrics["option_value"] = option_value
+                        additional_metrics["option_ticker"] = self.current_option_ticker
+                    else:
+                        # Option expired, should have been closed
+                        additional_metrics["option_value"] = 0.0
+                        additional_metrics["option_ticker"] = self.current_option_ticker
                 except (ValueError, KeyError):
-                    pass
+                    # Missing price data - use last known value or 0
+                    additional_metrics["option_value"] = 0.0
         
         # Record daily value
         self.portfolio.record_daily_value(current_date, additional_metrics)

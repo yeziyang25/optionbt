@@ -2,7 +2,6 @@
 Security classes representing different asset types in the portfolio.
 """
 
-from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 from typing import Optional
@@ -16,20 +15,19 @@ class SecurityType(Enum):
     PUT_OPTION = "put_option"
 
 
-@dataclass
 class Security:
     """Base class for all securities."""
     
-    ticker: str
-    security_type: SecurityType
-    currency: str = "USD"
+    def __init__(self, ticker: str, security_type: SecurityType, currency: str = "USD"):
+        self.ticker = ticker
+        self.security_type = security_type
+        self.currency = currency
     
     def get_price(self, pricing_date: date) -> float:
         """Get the security price on a given date."""
         raise NotImplementedError("Subclasses must implement get_price")
 
 
-@dataclass
 class Cash(Security):
     """Cash security - always priced at 1.0."""
     
@@ -45,12 +43,8 @@ class Cash(Security):
         return 1.0
 
 
-@dataclass
 class Equity(Security):
     """Equity security with price history."""
-    
-    name: Optional[str] = None
-    _price_data: Optional[dict] = None  # {date: price}
     
     def __init__(
         self,
@@ -86,17 +80,8 @@ class OptionType(Enum):
     PUT = "put"
 
 
-@dataclass
 class Option(Security):
     """Option security with strike, expiration, and pricing."""
-    
-    underlying_ticker: str
-    strike: float
-    expiration: date
-    option_type: OptionType
-    _bid_data: Optional[dict] = None  # {date: bid_price}
-    _ask_data: Optional[dict] = None  # {date: ask_price}
-    _underlying_price_data: Optional[dict] = None  # {date: underlying_price}
     
     def __init__(
         self,
@@ -147,6 +132,20 @@ class Option(Security):
             pricing_date: Date to get price for
             price_type: "bid", "ask", or "mid" (default)
         """
+        # Check if option has expired - use intrinsic value
+        if self.is_expired(pricing_date) or pricing_date == self.expiration:
+            # Calculate intrinsic value
+            try:
+                underlying = self.get_underlying_price(pricing_date)
+            except (ValueError, KeyError):
+                # No underlying price either, assume 0
+                return 0.0
+            
+            if self.option_type == OptionType.CALL:
+                return max(0, underlying - self.strike)
+            else:  # PUT
+                return max(0, self.strike - underlying)
+        
         if pricing_date not in self._bid_data or pricing_date not in self._ask_data:
             raise ValueError(
                 f"No price data available for {self.ticker} on {pricing_date}"
@@ -196,3 +195,4 @@ class Option(Security):
     def is_expired(self, current_date: date) -> bool:
         """Check if option has expired."""
         return current_date > self.expiration
+
