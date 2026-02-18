@@ -1,0 +1,43 @@
+# Example configuration for a SPY covered call strategy
+
+backtest:
+  name: "SPY_Covered_Call"
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 10000000
+  currency: "USD"
+
+strategy:
+  type: "covered_call"
+  name: "Monthly ATM Covered Call"
+  
+  # Option parameters
+  moneyness: 0.0  # 0 = ATM, 0.05 = 5% OTM
+  coverage_ratio: 0.5  # Write calls on 50% of equity position
+  roll_frequency: "monthly"  # weekly, monthly, quarterly
+  days_to_expiration: 30
+  
+  # Advanced parameters
+  target_yield: null  # Set to 0.15 for 15% target yield, null for fixed moneyness
+  rebalance_rule: "O"  # O=on option roll, Q=quarterly, S=semi-annual, A=annual
+  use_bid_ask: true  # Use bid/ask spreads (more realistic)
+
+# Data configuration
+data:
+  provider: "csv"  # csv, bloomberg, custom
+  data_dir: "data"
+  
+  equity:
+    ticker: "SPY"
+    file: "equity/SPY.csv"
+  
+  options:
+    ticker: "SPY"
+    file: "options/SPY_options.csv"
+
+# Output configuration
+output:
+  save_results: true
+  output_dir: "output"
+  generate_plots: true
+  save_trades: true
