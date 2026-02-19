@@ -115,7 +115,8 @@ class HolidayCalendar:
         """
         import pandas as pd
 
-        query = f"SELECT * FROM holidays WHERE [holiday_type] = '{holiday_type}'"
+        safe_type = str(holiday_type).replace("'", "''")
+        query = f"SELECT * FROM holidays WHERE [holiday_type] = '{safe_type}'"
         df = db_conn.query_tbl(query)
         dates = pd.to_datetime(df["date"]).dt.date.tolist()
         return cls(holidays=dates)

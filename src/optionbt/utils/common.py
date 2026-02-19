@@ -84,11 +84,24 @@ def extract_option_ticker(
             try:
                 info.strike[ticker] = float(strike_str)
             except ValueError:
+                import warnings
+                warnings.warn(
+                    f"Could not parse strike '{strike_str}' from ticker '{ticker}', defaulting to 0.0"
+                )
                 info.strike[ticker] = 0.0
         # If the format doesn't match, silently skip – the caller can
         # handle missing keys.
 
     return info
+
+
+# ---------------------------------------------------------------------------
+# SQL sanitisation helper
+# ---------------------------------------------------------------------------
+
+def _sanitise_sql_param(value: str) -> str:
+    """Escape single quotes in a SQL parameter to prevent injection."""
+    return str(value).replace("'", "''")
 
 
 # ---------------------------------------------------------------------------
@@ -123,5 +136,5 @@ class DbConnection(ABC):
         """Convert a Python list to a SQL ``IN (…)`` clause string."""
         if convert_elements:
             items = [str(i) for i in items]
-        quoted = ", ".join(f"'{i}'" for i in items)
+        quoted = ", ".join(f"'{_sanitise_sql_param(i)}'" for i in items)
         return f"({quoted})"

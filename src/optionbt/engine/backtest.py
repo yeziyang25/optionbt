@@ -3,14 +3,19 @@ Backtest engine for running option strategy backtests.
 """
 
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 import pandas as pd
 from tqdm import tqdm
 
 from src.optionbt.core.portfolio import Portfolio
 from src.optionbt.core.security import Equity, Option, Cash
 from src.optionbt.core.strategy import Strategy
-from src.optionbt.utils.dates import get_business_days, get_option_expiration_dates
+from src.optionbt.utils.dates import (
+    get_business_days,
+    get_option_expiration_dates,
+    HolidayCalendar,
+    _normalise_holidays,
+)
 
 
 class BacktestEngine:
@@ -33,7 +38,7 @@ class BacktestEngine:
         start_date: date,
         end_date: date,
         roll_dates: Optional[List[date]] = None,
-        holidays: Optional[List[date]] = None
+        holidays: Optional[Union[List[date], Dict[str, int], "HolidayCalendar"]] = None
     ):
         """
         Initialize backtest engine.
@@ -46,7 +51,8 @@ class BacktestEngine:
             start_date: Backtest start date
             end_date: Backtest end date
             roll_dates: Optional list of option roll dates
-            holidays: Optional list of holidays to exclude
+            holidays: Optional holidays to exclude.  Accepts ``List[date]``,
+                      legacy ``Dict[str, int]``, or ``HolidayCalendar``.
         """
         self.portfolio = portfolio
         self.strategy = strategy
@@ -54,7 +60,7 @@ class BacktestEngine:
         self.options = options
         self.start_date = start_date
         self.end_date = end_date
-        self.holidays = holidays or []
+        self.holidays = sorted(_normalise_holidays(holidays))
         
         # Generate roll dates if not provided
         if roll_dates is None:
@@ -76,32 +82,32 @@ class BacktestEngine:
         freq = self.strategy.config.roll_frequency
         
         if freq == RollFrequency.MONTHLY:
-            # Third Friday of each month
             return get_option_expiration_dates(
                 self.start_date,
                 self.end_date,
-                "monthly"
+                "monthly",
+                holidays=self.holidays,
             )
         elif freq == RollFrequency.WEEKLY:
-            # Weekly Friday expiries
             return get_option_expiration_dates(
                 self.start_date,
                 self.end_date,
-                "weekly"
+                "weekly",
+                holidays=self.holidays,
             )
         elif freq == RollFrequency.QUARTERLY:
-            # March, June, September, December third Fridays
             return get_option_expiration_dates(
                 self.start_date,
                 self.end_date,
-                "quarterly"
+                "quarterly",
+                holidays=self.holidays,
             )
         else:
-            # Default to monthly
             return get_option_expiration_dates(
                 self.start_date,
                 self.end_date,
-                "monthly"
+                "monthly",
+                holidays=self.holidays,
             )
     
     def run(self, verbose: bool = True) -> pd.DataFrame:

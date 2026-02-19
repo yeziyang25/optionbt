@@ -291,6 +291,11 @@ class DatabaseDataProvider(DataProvider):
             "bloomberg", "solactive", "mellon",
         ]
 
+    @staticmethod
+    def _esc(value) -> str:
+        """Escape a value for safe inclusion in a SQL string literal."""
+        return str(value).replace("'", "''")
+
     # -- DataProvider interface ---------------------------------------------
 
     def load_equity_data(
@@ -300,10 +305,11 @@ class DatabaseDataProvider(DataProvider):
         end_date: date,
     ) -> pd.DataFrame:
         """Load equity price data from the ``market_data`` table."""
+        safe_ticker = self._esc(ticker)
         query = (
             f"SELECT [date], CAST([value] AS FLOAT) AS close, source "
             f"FROM market_data "
-            f"WHERE ticker = '{ticker}' AND field = 'px_last' "
+            f"WHERE ticker = '{safe_ticker}' AND field = 'px_last' "
             f"AND [date] >= '{start_date}' AND [date] <= '{end_date}';"
         )
         df = self._conn.query_tbl(query)
@@ -337,10 +343,11 @@ class DatabaseDataProvider(DataProvider):
         ``px_bid`` / ``px_ask``).  This method pivots them into the
         ``bid`` / ``ask`` columns expected by the framework.
         """
+        safe_ticker = self._esc(ticker)
         query = (
             f"SELECT [ticker], [date], [field], CAST([value] AS FLOAT) AS value "
             f"FROM market_data "
-            f"WHERE ticker LIKE '{ticker}%' "
+            f"WHERE ticker LIKE '{safe_ticker}%' "
             f"AND (field = 'px_ask' OR field = 'px_bid') "
             f"AND [date] >= '{start_date}' AND [date] <= '{end_date}';"
         )
@@ -400,9 +407,10 @@ class DatabaseDataProvider(DataProvider):
         Returns a ``{date: amount}`` dictionary matching the convention
         used by ``helper_functions/securities.py``.
         """
+        safe_ticker = self._esc(ticker.upper())
         query = (
             f"SELECT ex_date, CAST(dvd_amount AS FLOAT) AS dvd_amount "
-            f"FROM dividends WHERE ticker = '{ticker.upper()}';"
+            f"FROM dividends WHERE ticker = '{safe_ticker}';"
         )
         df = self._conn.query_tbl(query)
         if df.empty:
