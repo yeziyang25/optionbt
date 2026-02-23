@@ -1,0 +1,4 @@
+backtest,sec_id,sec_name,sec_type,currency,allocation,option_w_against,start_date,option_selection,custom_options_file,option_sell_to_open_price,option_buy_to_close_price,end_date,DTM,rebal_rule,pct_otm,target_yield
+SPY,cash,Cash,cash,USD,10000000.0,,2018-01-03,,,,,6/20/2025,6.0,O,,0.035
+SPY,equity1,SPY US,equity,USD,1.0,,,,,,,,,,,
+SPY,option1,SPY US,call option,USD,-0.8,equity1,,custom,runs\custom_options_list\SPY US_0.0_option_list.csv,,,,,,0.0,
