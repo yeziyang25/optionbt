@@ -1,0 +1,232 @@
+# =============================================================================
+# Option Backtesting Strategy Configuration Template
+# =============================================================================
+#
+# OVERVIEW
+# --------
+# A strategy is made up of one or more "legs": cash, equity, and option legs.
+# Options must reference an equity leg via coverage.against, making pairs
+# explicit and easy to audit.
+#
+# DATA SOURCING
+# -------------
+# Each equity/option leg can pull pricing from:
+#   type: "file"      — local CSV files (standalone, no DB required)
+#   type: "database"  — internal IM SQL database (production environment)
+#
+# When type is "file":
+#   - equity_file    points to a CSV with columns: date, px_last
+#   - options_file   points to a CSV with columns: ticker, date, side, value
+#     (side values: px_bid or px_ask)
+#   - dividend_file  (optional) CSV with columns: ex_date, dvd_amount
+#
+# MULTI-LEG STRATEGIES
+# --------------------
+# Combine multiple equity + option legs freely.
+# For spread strategies (e.g. bull call spread): add two option legs with the
+# same underlying but different allocations (+long, -short) and strikes.
+#
+# PAIRS AND COVERAGE
+# ------------------
+# Each option leg has a "coverage" block:
+#   against: <equity_leg_id>  — which equity position backs this option
+#   ratio:   <0.0 to 1.0>    — fraction of equity covered (1.0 = fully covered)
+#
+# ALLOCATION SIGN CONVENTION
+# --------------------------
+#   allocation > 0  → long (buy to open)
+#   allocation < 0  → short (sell to open / covered call writing)
+#
+# =============================================================================
+
+strategy:
+  name: "CoveredCallExample"
+  base_currency: "USD"           # Portfolio base currency
+  initial_capital: 10000000      # Starting NAV
+  start_date: "2020-01-01"       # First backtest date (YYYY-MM-DD)
+  end_date:   "2025-01-01"       # Last  backtest date (YYYY-MM-DD)
+
+  # Rebalance / option-roll schedule
+  # Options:
+  #   "monthly_third_friday" — roll on the 3rd Friday of each month (default)
+  #   "weekly_friday"        — roll every Friday
+  #   "custom_file"          — load explicit dates from rebalance_dates_file
+  rebalance_schedule: "monthly_third_friday"
+
+  # Required when rebalance_schedule is "custom_file"
+  # rebalance_dates_file: "config/rebal_dates.csv"
+
+  # Holiday calendar used to skip non-trading days
+  # Options: "TSX", "NYSE"  (or path to a CSV holidays file)
+  holiday_calendar: "TSX"
+
+  # Optional: path to a CSV holiday file (columns: date, name)
+  # holidays_file: "config/tsx_holidays.csv"
+
+
+# ---------------------------------------------------------------------------
+# LEGS
+# ---------------------------------------------------------------------------
+legs:
+
+  # ---- 1. Cash leg (required) -------------------------------------------
+  - id: cash
+    type: cash
+    currency: "USD"
+
+  # ---- 2. Equity leg ----------------------------------------------------
+  - id: equity1
+    type: equity
+    ticker: "SPY US"        # Bloomberg-style ticker used as the pricing key
+    currency: "USD"
+    allocation: 1.0         # 100% of portfolio NAV invested in this equity
+
+    data_source:
+      type: file            # "file" | "database"
+      equity_file:  "data/equity/SPY US equity_pricing.csv"
+      dividend_file: "data/equity/SPY US_dividends.csv"   # optional; omit if no dividends
+
+  # ---- 3. Short call option (covered call) ------------------------------
+  - id: option1
+    type: call_option       # "call_option" | "put_option"
+
+    # The ticker used to look up the option chain (underlying name on exchange)
+    underlying_ticker: "SPY US"
+    currency: "USD"
+
+    allocation: -1.0        # Negative = sell-to-open (short / write)
+
+    # COVERAGE — links this option to the equity leg it is written against
+    coverage:
+      against: equity1      # Must match the 'id' of an equity leg above
+      ratio: 1.0            # 1.0 = fully covered (100%); 0.5 = half-covered
+
+    # OPTION SELECTION — how to choose which contract to write each roll day
+    selection:
+      method: custom        # "custom" | "pct_otm" | "delta" (pct_otm/delta: future)
+      custom_file: "runs/custom_options_list/SPY US_0.0_option_list.csv"
+      # If method is "pct_otm", set:
+      # pct_otm: 0.02       # 2% out-of-the-money
+
+    # PRICING — execution price assumptions
+    pricing:
+      sell_price: "bid"       # Price used to open (sell) the option
+      buy_price:  "intrinsic" # Price used to close (buy back) on roll day
+
+    data_source:
+      type: file
+      options_file: "data/options/SPY US_backtest_format_options.csv"
+
+
+# =============================================================================
+# EXAMPLE: Multi-leg spread — Bull Call Spread
+# =============================================================================
+# To model a bull call spread, add two option legs on the same underlying:
+#   - option_long_call:  allocation +0.5 (long call, lower strike)
+#   - option_short_call: allocation -0.5 (short call, higher strike)
+#
+# legs:
+#   - id: option_long_call
+#     type: call_option
+#     underlying_ticker: "SPY US"
+#     currency: "USD"
+#     allocation: 0.5          # Long
+#     coverage:
+#       against: equity1
+#       ratio: 0.5
+#     selection:
+#       method: custom
+#       custom_file: "runs/custom_options_list/SPY US_-0.02_option_list.csv"
+#     pricing:
+#       sell_price: "ask"      # Pay ask to buy
+#       buy_price:  "bid"
+#     data_source:
+#       type: file
+#       options_file: "data/options/SPY US_backtest_format_options.csv"
+#
+#   - id: option_short_call
+#     type: call_option
+#     underlying_ticker: "SPY US"
+#     currency: "USD"
+#     allocation: -0.5         # Short
+#     coverage:
+#       against: equity1
+#       ratio: 0.5
+#     selection:
+#       method: custom
+#       custom_file: "runs/custom_options_list/SPY US_0.02_option_list.csv"
+#     pricing:
+#       sell_price: "bid"
+#       buy_price:  "intrinsic"
+#     data_source:
+#       type: file
+#       options_file: "data/options/SPY US_backtest_format_options.csv"
+
+
+# =============================================================================
+# EXAMPLE: Multi-equity basket with covered calls (like RNCC strategy)
+# =============================================================================
+#
+# strategy:
+#   name: "RNCC"
+#   base_currency: "USD"
+#   initial_capital: 10000000
+#   start_date: "2020-04-15"
+#   end_date:   "2025-05-20"
+#   rebalance_schedule: "monthly_third_friday"
+#   holiday_calendar: "TSX"
+#
+# legs:
+#   - id: cash
+#     type: cash
+#     currency: "USD"
+#
+#   - id: equity1
+#     type: equity
+#     ticker: "RCI/B CN"
+#     currency: "USD"
+#     allocation: 0.33
+#     data_source:
+#       type: database          # Load from internal DB
+#
+#   - id: option1
+#     type: call_option
+#     underlying_ticker: "RCI CN"
+#     currency: "USD"
+#     allocation: -0.1
+#     coverage:
+#       against: equity1
+#       ratio: 1.0
+#     selection:
+#       method: custom
+#       custom_file: "runs/custom_options_list/RCI CN_0_option_list.csv"
+#     pricing:
+#       sell_price: "bid"
+#       buy_price:  "intrinsic"
+#     data_source:
+#       type: database
+#
+#   - id: equity2
+#     type: equity
+#     ticker: "BCE CN"
+#     currency: "USD"
+#     allocation: 0.33
+#     data_source:
+#       type: database
+#
+#   - id: option2
+#     type: call_option
+#     underlying_ticker: "BCE CN"
+#     currency: "USD"
+#     allocation: -0.1
+#     coverage:
+#       against: equity2
+#       ratio: 1.0
+#     selection:
+#       method: custom
+#       custom_file: "runs/custom_options_list/BCE CN_0_option_list.csv"
+#     pricing:
+#       sell_price: "bid"
+#       buy_price:  "intrinsic"
+#     data_source:
+#       type: database

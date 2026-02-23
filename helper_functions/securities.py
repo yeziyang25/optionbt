@@ -6,17 +6,95 @@ import os
 import helper_functions.rebalance_dates as rebal_dates
 cur_dir = os.path.dirname(__file__)
 import sys
-sys.path.append('Z:\\ApolloGX')
-if "\\im_dev\\" in cur_dir:
-    import im_dev.std_lib.common as common
-    import im_dev.std_lib.data_library as data_library
-else:
-    import im_prod.std_lib.common as common
-    import im_prod.std_lib.data_library as data_library
+
+# ---------------------------------------------------------------------------
+# Internal-library imports — optional.  The module loads cleanly without them
+# when a DataLoader is supplied (standalone / file-based path).
+# ---------------------------------------------------------------------------
+_common = None
+_data_library = None
+try:
+    sys.path.append("Z:\\ApolloGX")
+    if "\\im_dev\\" in cur_dir:
+        import im_dev.std_lib.common as _common          # type: ignore
+        import im_dev.std_lib.data_library as _data_library  # type: ignore
+    else:
+        import im_prod.std_lib.common as _common         # type: ignore
+        import im_prod.std_lib.data_library as _data_library  # type: ignore
+except Exception:
+    # Fallback: try the local common.py (present in the repo root)
+    try:
+        _proj_root = os.path.dirname(cur_dir)
+        if _proj_root not in sys.path:
+            sys.path.insert(0, _proj_root)
+        import common as _common          # type: ignore
+        import data_library as _data_library  # type: ignore
+    except Exception:
+        pass
+
+# Convenience aliases so existing internal code paths still work unchanged
+common = _common
+data_library = _data_library
+
+
+# ---------------------------------------------------------------------------
+# Local fallback for common.extract_option_ticker
+# Parses tickers of the form "<CLASS> <EXCHANGE> MM/DD/YY C<STRIKE>"
+# e.g. "SPY US 09/19/25 C570" or "RCI CN 04/17/20 C56.0"
+# ---------------------------------------------------------------------------
+
+class _OptionTickerInfo:
+    """Mirrors the interface of the object returned by common.extract_option_ticker."""
+
+    def __init__(self, expiry: dict, strike: dict, option_type: dict):
+        self.expiry = expiry
+        self.strike = strike
+        self.option_type = option_type
+
+
+def _extract_option_ticker_local(df, ticker_col: str = "ticker") -> _OptionTickerInfo:
+    """Parse option tickers without requiring im_prod."""
+    expiry_map: dict = {}
+    strike_map: dict = {}
+    type_map: dict = {}
+    for tkr in df[ticker_col].dropna().unique():
+        try:
+            parts = str(tkr).split(" ")
+            expiry_map[tkr] = dt.datetime.strptime(parts[-2], "%m/%d/%y")
+            opt_part = parts[-1]
+            type_map[tkr] = "call" if opt_part[0].upper() == "C" else "put"
+            # Remove trailing ".0" before parsing (e.g. "C56.0" → 56.0)
+            raw_strike = opt_part[1:]
+            strike_map[tkr] = float(raw_strike)
+        except Exception:
+            pass
+    return _OptionTickerInfo(expiry_map, strike_map, type_map)
+
+
+def _extract_option_ticker(df, ticker_col: str = "ticker") -> _OptionTickerInfo:
+    """Use im_prod's parser when available; fall back to the local implementation."""
+    if common is not None:
+        return common.extract_option_ticker(df, ticker_col)
+    return _extract_option_ticker_local(df, ticker_col)
+
 
 class security_data():  # load the relevant data for each security
-    def __init__(self, data, cur_dir:str, start_date:str, end_date:str, opt_rebal_dates,bs_flag=False):
+    def __init__(self, data, cur_dir: str, start_date: str, end_date: str, opt_rebal_dates, bs_flag=False, data_loader=None):
+        """
+        Parameters
+        ----------
+        data         : dict-like row from portfolio_configs (sec_id, sec_type, …)
+        cur_dir      : project root used to resolve relative file paths
+        start_date   : "YYYY-MM-DD"
+        end_date     : "YYYY-MM-DD"
+        opt_rebal_dates : list of rebalance date.date objects
+        bs_flag      : legacy flag — load from adhoc CSV files under data_download/
+        data_loader  : optional DataLoader instance (FileDataLoader or
+                       DatabaseDataLoader).  When supplied it overrides both the
+                       bs_flag path and the database path for all data retrieval.
+        """
         self.bs_flag = bs_flag
+        self.data_loader = data_loader
         self.sec_id = data['sec_id']
         self.sec_name = data['sec_name']
         self.sec_type = data['sec_type']
@@ -36,11 +114,18 @@ class security_data():  # load the relevant data for each security
         if 'option' in self.sec_type.lower():
             if str(data['option_selection']) == 'custom':
                 self.option_selection = None
-                _df_custom = pd.read_csv(f"{cur_dir}\\{data['custom_options_file']}")
+                _custom_file = str(data['custom_options_file'])
+                # Support both OS-path separators for cross-platform compatibility
+                _custom_file = _custom_file.replace("\\", os.sep).replace("/", os.sep)
+                _df_custom = pd.read_csv(os.path.join(cur_dir, _custom_file))
                 if 'sec_id' in _df_custom.columns.tolist():
                     _df_custom = _df_custom[_df_custom['sec_id'] == self.sec_id].reset_index(drop=True)
                 self.option_selection_custom_map = dict(zip(pd.to_datetime(_df_custom['date']).dt.strftime("%Y-%m-%d"), _df_custom['ticker']))
                 self.option_custom_alloc_ovrd = dict(zip(pd.to_datetime(_df_custom['date']).dt.strftime("%Y-%m-%d"), _df_custom['weight']))
+            else:
+                self.option_selection = data.get('option_selection')
+                self.option_selection_custom_map = None
+                self.option_custom_alloc_ovrd = None
 
             option_underlying_override = {"BTCC CN": "BTCC/B CN", "RCI CN": "RCI/B CN"}
             if not option_underlying_override.get(self.sec_name) is None:
@@ -62,65 +147,101 @@ class security_data():  # load the relevant data for each security
         return csv_path
 
     def retrieve_equity_pricing(self, _ticker):
+        # --- DataLoader path (highest priority) ---
+        if self.data_loader is not None:
+            return self.data_loader.get_equity_pricing(_ticker, self.start_date, self.end_date)
+
+        # --- Legacy bs_flag path (local CSV under data_download/adhoc_pricing) ---
         if self.bs_flag:
-            cur_dir = os.path.dirname(os.path.dirname(__file__))
-            df_sorted = pd.read_csv(f"{cur_dir}\\data_download\\adhoc_pricing\\equity\\{_ticker} equity_pricing.csv",delimiter=',')
+            _root = os.path.dirname(os.path.dirname(__file__))
+            _path = os.path.join(
+                _root, "data_download", "adhoc_pricing", "equity",
+                f"{_ticker} equity_pricing.csv",
+            )
+            df_sorted = pd.read_csv(_path, delimiter=',')
+            return self.build_dict(df_sorted, 'date', 'px_last')
+
+        # --- Database path ---
+        if common is None:
+            raise RuntimeError(
+                f"No data source available for equity '{_ticker}'. "
+                "Provide a data_loader at SecurityData initialization or set bs_flag=True."
+            )
+        conn = common.db_connection()
+        base_query = (
+            f"SELECT [date] as date, [value] as px_last, source "
+            f"FROM [dbo].[market_data] "
+            f"WHERE ticker = '{_ticker}' AND field = 'px_last'"
+        )
+        if ('equity' in self.sec_type.lower()) or ('option' in self.sec_type.lower()):
+            query = base_query + f" AND [date] >= '{self.start_date}' AND [date] <= '{self.end_date}';"
         else:
-            conn = common.db_connection()
-            base_query = (
-                f"""SELECT [date] as date, [value] as px_last, source
-                FROM [dbo].[market_data]
-                WHERE ticker = '{_ticker}' AND field = 'px_last'""")
+            raise ValueError(f"Security Type - {self.sec_type} is not recognized")
+        df_equity = conn.query_tbl(query)
+        df_equity['px_last'] = df_equity['px_last'].astype(float)
 
-            if ('equity' in self.sec_type.lower()) or ('option' in self.sec_type.lower()):
-                query = base_query + f""" AND [date] >= '{self.start_date}' AND [date] <= '{self.end_date}';"""
-            else:
-                raise ValueError(f"Security Type - {self.sec_type} is not recognized")
-            df_equity = conn.query_tbl(query)
-            df_equity['px_last'] = df_equity['px_last'].astype(float)
-
-            # Define custom hierarchy
-            custom_hierarchy = {"bloomberg":1, "solactive":2, "mellon":3}
-
-            # Sort column values by hierarchy
-            df_equity["ranking"] = df_equity["source"].map(custom_hierarchy)
-            df_sorted = df_equity.sort_values(["date", "ranking"]).drop_duplicates(subset="date")
-
+        custom_hierarchy = {"bloomberg": 1, "solactive": 2, "mellon": 3}
+        df_equity["ranking"] = df_equity["source"].map(custom_hierarchy)
+        df_sorted = df_equity.sort_values(["date", "ranking"]).drop_duplicates(subset="date")
 
         return self.build_dict(df_sorted, 'date', 'px_last')
-        #return self.build_dict(df_sorted, 'date', 'px_last')
 
     
     def retrieve_option_pricing(self, _ticker):
+        # --- DataLoader path ---
+        if self.data_loader is not None:
+            opt_tickers = (
+                list(self.option_selection_custom_map.values())
+                if self.option_selection_custom_map
+                else None
+            )
+            return self.data_loader.get_option_pricing(_ticker, opt_tickers)
+
+        # --- Legacy bs_flag path ---
         if self.bs_flag:
-            cur_dir = os.path.dirname(os.path.dirname(__file__))
-            options_data = pd.read_csv(f"{cur_dir}\\data_download\\adhoc_pricing\\options\\{_ticker}_backtest_format_options.csv",delimiter=',')
+            _root = os.path.dirname(os.path.dirname(__file__))
+            _path = os.path.join(
+                _root, "data_download", "adhoc_pricing", "options",
+                f"{_ticker}_backtest_format_options.csv",
+            )
+            options_data = pd.read_csv(_path, delimiter=',')
             options_data['date'] = pd.to_datetime(options_data['date']).dt.strftime('%Y-%m-%d')
             options_data['value'] = options_data['value'].astype(float)
-            options_data['ticker'] = options_data['ticker']
-        else:
-            conn = common.db_connection()
-            if self.option_selection_custom_map:
-                params = (x.replace(" Equity", "") for x in self.option_selection_custom_map.values())
-                tickers = "', '".join(params)
-                query = f"""
-                SELECT [ticker], [date], [field] as side, [value]
-                FROM [dbo].[market_data]
-                WHERE ticker IN ('{tickers}') AND (field = 'px_ask' OR field = 'px_bid')
-                """
-                options_data = conn.query_tbl(query)
-            else:
-                query = f"""
-                SELECT [ticker], [date], [field] as side, [value]
-                FROM [dbo].[market_data]
-                WHERE ticker LIKE '{_ticker + " CN"}___/__/__ C%' AND (field = 'px_ask' OR field = 'px_bid')
-                """
-                options_data = conn.query_tbl(query)
+            return options_data
 
-        return options_data
+        # --- Database path ---
+        if common is None:
+            raise RuntimeError(
+                f"No data source available for options on '{_ticker}'. "
+                "Provide a data_loader at SecurityData initialization or set bs_flag=True."
+            )
+        conn = common.db_connection()
+        if self.option_selection_custom_map:
+            params = (x.replace(" Equity", "") for x in self.option_selection_custom_map.values())
+            tickers = "', '".join(params)
+            query = (
+                f"SELECT [ticker], [date], [field] as side, [value] "
+                f"FROM [dbo].[market_data] "
+                f"WHERE ticker IN ('{tickers}') AND (field = 'px_ask' OR field = 'px_bid')"
+            )
+        else:
+            query = (
+                f"SELECT [ticker], [date], [field] as side, [value] "
+                f"FROM [dbo].[market_data] "
+                f"WHERE ticker LIKE '{_ticker + ' CN'}___/__/__ C%' "
+                f"AND (field = 'px_ask' OR field = 'px_bid')"
+            )
+        return conn.query_tbl(query)
 
 
     def retrieve_dvd(self):
+        # --- DataLoader path ---
+        if self.data_loader is not None:
+            return self.data_loader.get_dividends(self.sec_name)
+
+        # --- Database path ---
+        if common is None:
+            return {}
         conn = common.db_connection()
         sql_str = f"SELECT ticker, ex_date, payable_date, dvd_amount from dividends WHERE ticker='{self.sec_name.upper()}';"
         df_dvd = conn.query_tbl(sql_str)
@@ -215,7 +336,7 @@ class option():
 
 
         if not self.option_chain.empty:
-            opt_cls = common.extract_option_ticker(self.option_chain, 'ticker')
+            opt_cls = _extract_option_ticker(self.option_chain, 'ticker')
             self.option_chain['expiry'] = self.option_chain['ticker'].map(opt_cls.expiry)
             self.option_chain['strike'] = self.option_chain['ticker'].map(opt_cls.strike)
             self.option_chain['underlying_price'] = self.option_underlying_price
@@ -295,7 +416,7 @@ class option():
 
     def select_option(self, underlying_ref_price:float, pct_otm:float=1.0):
         # select the option that we will sell on the roll-day. Only look at the options that have a bid price and sell based on the pct_otm
-        opt_cls = common.extract_option_ticker(self.option_chain, 'ticker')
+        opt_cls = _extract_option_ticker(self.option_chain, 'ticker')
         self.option_chain['expiry'] = self.option_chain['ticker'].map(opt_cls.expiry)
         self.option_chain['strike'] = self.option_chain['ticker'].map(opt_cls.strike)
         self.option_chain['option_type'] = self.option_chain['ticker'].map(opt_cls.option_type)
