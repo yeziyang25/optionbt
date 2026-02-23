@@ -190,10 +190,9 @@ def main():
     # ------------------------------------------------------------------
     # 4. Build rebalance dates
     # ------------------------------------------------------------------
-    rebal_file = strategy.get("rebalance_dates_file")
     import pandas as pd
+    rebal_file = strategy.get("rebalance_dates_file")
     if rebal_file and os.path.exists(rebal_file):
-        import pandas as pd
         opt_rebalance_dates = [
             d.date() for d in pd.to_datetime(pd.read_csv(rebal_file).iloc[:, 0])
         ]

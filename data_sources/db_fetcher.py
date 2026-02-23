@@ -109,7 +109,6 @@ class DbDataFetcher(DataFetcher):
         )
 
     def get_holidays(self, calendar: str = "TSX") -> dict:
-        import importlib
         dl = self._get_data_library()
         if calendar.upper() == "NYSE":
             return dl.nyse_holidays()

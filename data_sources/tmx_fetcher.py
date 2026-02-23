@@ -323,14 +323,20 @@ def _process_raw(
         return pd.DataFrame(columns=["ticker", "date", "side", "value"])
 
     # Build standard ticker format: "<CLASS> CN MM/DD/YY C<STRIKE>"
+    # Format strike as integer when it has no fractional part (e.g. 30.0 → "30")
+    def _fmt_strike(s):
+        return str(int(s)) if s == int(s) else str(round(s, 2))
+
+    df["_strike_str"] = df["Strike Price"].apply(_fmt_strike)
     df["ticker"] = (
         df["Class Symbol"].astype(str)
         + " CN "
         + pd.to_datetime(df["Expiry Date"]).dt.strftime("%m/%d/%y")
         + " "
         + np.where(df["Call/Put"] == 1, "P", "C")
-        + round(df["Strike Price"], 2).astype(str)
+        + df["_strike_str"]
     )
+    df = df.drop(columns=["_strike_str"])
 
     # Melt bid/ask into long form
     df_long = pd.melt(
@@ -372,11 +378,6 @@ def _process_raw(
     )
     df_long["TTM"] = (df_long["expiration_date"] - pd.to_datetime(df_long["date"])).dt.days
     df_long = df_long[(df_long["TTM"] < max_ttm_days) & (df_long["value"] != 0)]
-
-    # Strip trailing ".0" from strike in ticker
-    df_long["ticker"] = df_long["ticker"].apply(
-        lambda x: x[:-2] if x.endswith(".0") else x
-    )
 
     df_long["date"] = pd.to_datetime(df_long["date"]).dt.strftime("%Y-%m-%d")
     return df_long.reset_index(drop=True)
