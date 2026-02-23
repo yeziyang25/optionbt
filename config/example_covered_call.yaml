@@ -1,0 +1,62 @@
+# =============================================================================
+# example_covered_call.yaml
+# Simple covered-call strategy on a single SPY equity position.
+# Run with:
+#   python run_v2.py --config config/example_covered_call.yaml
+# =============================================================================
+
+strategy:
+  name: "SPY_CoveredCall"
+  base_currency: "USD"
+  initial_capital: 10000000
+  start_date: "2018-01-03"
+  end_date:   "2025-09-19"
+
+  # Roll every 3rd Friday of each month
+  rebalance_schedule: "monthly_third_friday"
+  holiday_calendar: "NYSE"
+
+  model:            "btbuilder"
+  reinvest_premium: true
+  target_yield:     -1      # -1 = fixed coverage ratio from allocation
+
+legs:
+
+  # Cash (required)
+  - id: cash
+    type: cash
+    currency: "USD"
+
+  # Equity
+  - id: equity1
+    type: equity
+    ticker: "SPY US"
+    currency: "USD"
+    allocation: 1.0
+
+    data_source:
+      type: file
+      equity_file: "data/equity/SPY US equity_pricing.csv"
+
+  # Short call — covered-call overlay (50 % coverage)
+  - id: option1
+    type: call_option
+    underlying_ticker: "SPY US"
+    currency: "USD"
+    allocation: -1.0        # short
+
+    coverage:
+      against: equity1      # this call is backed by equity1
+      ratio: 0.5            # 50 % covered
+
+    selection:
+      method: custom
+      custom_file: "runs/custom_options_list/SPY US_0.0_option_list.csv"
+
+    pricing:
+      sell_price: "bid"
+      buy_price:  "intrinsic"
+
+    data_source:
+      type: file
+      options_file: "data/options/SPY US_backtest_format_options.csv"

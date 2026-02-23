@@ -36,6 +36,48 @@ except Exception:
 common = _common
 data_library = _data_library
 
+
+# ---------------------------------------------------------------------------
+# Local fallback for common.extract_option_ticker
+# Parses tickers of the form "<CLASS> <EXCHANGE> MM/DD/YY C<STRIKE>"
+# e.g. "SPY US 09/19/25 C570" or "RCI CN 04/17/20 C56.0"
+# ---------------------------------------------------------------------------
+
+class _OptionTickerInfo:
+    """Mirrors the interface of the object returned by common.extract_option_ticker."""
+
+    def __init__(self, expiry: dict, strike: dict, option_type: dict):
+        self.expiry = expiry
+        self.strike = strike
+        self.option_type = option_type
+
+
+def _extract_option_ticker_local(df, ticker_col: str = "ticker") -> _OptionTickerInfo:
+    """Parse option tickers without requiring im_prod."""
+    expiry_map: dict = {}
+    strike_map: dict = {}
+    type_map: dict = {}
+    for tkr in df[ticker_col].dropna().unique():
+        try:
+            parts = str(tkr).split(" ")
+            expiry_map[tkr] = dt.datetime.strptime(parts[-2], "%m/%d/%y")
+            opt_part = parts[-1]
+            type_map[tkr] = "call" if opt_part[0].upper() == "C" else "put"
+            # Remove trailing ".0" before parsing (e.g. "C56.0" → 56.0)
+            raw_strike = opt_part[1:]
+            strike_map[tkr] = float(raw_strike)
+        except Exception:
+            pass
+    return _OptionTickerInfo(expiry_map, strike_map, type_map)
+
+
+def _extract_option_ticker(df, ticker_col: str = "ticker") -> _OptionTickerInfo:
+    """Use im_prod's parser when available; fall back to the local implementation."""
+    if common is not None:
+        return common.extract_option_ticker(df, ticker_col)
+    return _extract_option_ticker_local(df, ticker_col)
+
+
 class security_data():  # load the relevant data for each security
     def __init__(self, data, cur_dir: str, start_date: str, end_date: str, opt_rebal_dates, bs_flag=False, data_loader=None):
         """
@@ -294,7 +336,7 @@ class option():
 
 
         if not self.option_chain.empty:
-            opt_cls = common.extract_option_ticker(self.option_chain, 'ticker')
+            opt_cls = _extract_option_ticker(self.option_chain, 'ticker')
             self.option_chain['expiry'] = self.option_chain['ticker'].map(opt_cls.expiry)
             self.option_chain['strike'] = self.option_chain['ticker'].map(opt_cls.strike)
             self.option_chain['underlying_price'] = self.option_underlying_price
@@ -374,7 +416,7 @@ class option():
 
     def select_option(self, underlying_ref_price:float, pct_otm:float=1.0):
         # select the option that we will sell on the roll-day. Only look at the options that have a bid price and sell based on the pct_otm
-        opt_cls = common.extract_option_ticker(self.option_chain, 'ticker')
+        opt_cls = _extract_option_ticker(self.option_chain, 'ticker')
         self.option_chain['expiry'] = self.option_chain['ticker'].map(opt_cls.expiry)
         self.option_chain['strike'] = self.option_chain['ticker'].map(opt_cls.strike)
         self.option_chain['option_type'] = self.option_chain['ticker'].map(opt_cls.option_type)

@@ -1,0 +1,126 @@
+# =============================================================================
+# example_multi_leg.yaml
+# Multi-leg basket covered-call across three Canadian telecoms (RNCC).
+# Each equity has a corresponding short call written at 0 % OTM.
+#
+# Run with:
+#   python run_v2.py --config config/example_multi_leg.yaml
+# =============================================================================
+
+strategy:
+  name: "RNCC"
+  base_currency: "USD"
+  initial_capital: 10000000
+  start_date: "2020-04-15"
+  end_date:   "2025-05-20"
+
+  rebalance_schedule: "monthly_third_friday"
+  holiday_calendar: "TSX"
+
+  model:            "btbuilder"
+  reinvest_premium: true
+  target_yield:     -1
+
+legs:
+
+  - id: cash
+    type: cash
+    currency: "USD"
+
+  # ── Equity 1 ──────────────────────────────────────────────────────────────
+  - id: equity1
+    type: equity
+    ticker: "RCI/B CN"
+    currency: "USD"
+    allocation: 0.33
+    data_source:
+      type: database
+
+  - id: option1
+    type: call_option
+    underlying_ticker: "RCI CN"
+    currency: "USD"
+    allocation: -1.0
+    coverage:
+      against: equity1
+      ratio: 0.1              # 10 % covered-call overlay
+    selection:
+      method: custom
+      custom_file: "runs/custom_options_list/RCI CN_0_option_list.csv"
+    pricing:
+      sell_price: "bid"
+      buy_price:  "intrinsic"
+    data_source:
+      type: database
+
+  # ── Equity 2 ──────────────────────────────────────────────────────────────
+  - id: equity2
+    type: equity
+    ticker: "BCE CN"
+    currency: "USD"
+    allocation: 0.33
+    data_source:
+      type: database
+
+  - id: option2
+    type: call_option
+    underlying_ticker: "BCE CN"
+    currency: "USD"
+    allocation: -1.0
+    coverage:
+      against: equity2
+      ratio: 0.1
+    selection:
+      method: custom
+      custom_file: "runs/custom_options_list/BCE CN_0_option_list.csv"
+    pricing:
+      sell_price: "bid"
+      buy_price:  "intrinsic"
+    data_source:
+      type: database
+
+  # ── Equity 3 ──────────────────────────────────────────────────────────────
+  - id: equity3
+    type: equity
+    ticker: "T CN"
+    currency: "USD"
+    allocation: 0.33
+    data_source:
+      type: database
+
+  - id: option3
+    type: call_option
+    underlying_ticker: "T CN"
+    currency: "USD"
+    allocation: -1.0
+    coverage:
+      against: equity3
+      ratio: 0.1
+    selection:
+      method: custom
+      custom_file: "runs/custom_options_list/T CN_0_option_list.csv"
+    pricing:
+      sell_price: "bid"
+      buy_price:  "intrinsic"
+    data_source:
+      type: database
+
+# =============================================================================
+# MULTI-LEG NOTES
+# =============================================================================
+#
+# Pairs & coverage
+# ----------------
+# Every option leg must declare coverage.against (the equity leg id) and
+# coverage.ratio (fraction of that equity position that is covered).
+#
+#   contracts = round( abs(allocation) * equity_qty * ratio / 100 )
+#
+# To build a collar (short call + long put):
+#   - option_call:  allocation -1.0, type call_option
+#   - option_put:   allocation +1.0, type put_option
+#   Both reference the same coverage.against equity leg.
+#
+# Bull call spread (two option legs, same underlying, different strikes):
+#   - option_long:  allocation +1.0, custom_file with lower-strike ATM calls
+#   - option_short: allocation -1.0, custom_file with higher-strike OTM calls
