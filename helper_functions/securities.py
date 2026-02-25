@@ -40,7 +40,14 @@ class security_data():  # load the relevant data for each security
                 if 'sec_id' in _df_custom.columns.tolist():
                     _df_custom = _df_custom[_df_custom['sec_id'] == self.sec_id].reset_index(drop=True)
                 self.option_selection_custom_map = dict(zip(pd.to_datetime(_df_custom['date']).dt.strftime("%Y-%m-%d"), _df_custom['ticker']))
-                self.option_custom_alloc_ovrd = dict(zip(pd.to_datetime(_df_custom['date']).dt.strftime("%Y-%m-%d"), _df_custom['weight']))
+                if 'weight' in _df_custom.columns:
+                    self.option_custom_alloc_ovrd = dict(zip(pd.to_datetime(_df_custom['date']).dt.strftime("%Y-%m-%d"), _df_custom['weight']))
+                else:
+                    self.option_custom_alloc_ovrd = None
+            else:
+                self.option_selection = None if str(data['option_selection']) == 'nan' else float(data['option_selection'])
+                self.option_selection_custom_map = None
+                self.option_custom_alloc_ovrd = None
 
             option_underlying_override = {"BTCC CN": "BTCC/B CN", "RCI CN": "RCI/B CN"}
             if not option_underlying_override.get(self.sec_name) is None:
