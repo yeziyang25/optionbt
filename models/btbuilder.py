@@ -68,9 +68,9 @@ class security():
 
             # we use this if we are writing more than one option for an equity. Typically to alter the pct OTM
             if sec_details.option_custom_alloc_ovrd is None:
-                self.alloc_ovrd = None
+                self.alloc_ovrd = 1
             else:
-                self.alloc_ovrd = sec_details.option_custom_alloc_ovrd.get(self.date.strftime("%Y-%m-%d"))
+                self.alloc_ovrd = sec_details.option_custom_alloc_ovrd.get(self.date.strftime("%Y-%m-%d"), 1)
 
         elif str('fx_fwd') in self.security_type:
             _sec_cls = fx_fwd(d, fx_rates, self.crncy, base_currency)
